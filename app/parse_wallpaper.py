@@ -20,23 +20,34 @@ class ParseWallpaper:
     @property
     def page_month_url(self) -> str:
         return self.base_url +\
-            f'{self.year}/{self.month - 1:02}/desktop-wallpaper-calendars-{self.month_name_long}-{self.year}/'
+            f'{self.year}/{self.month - 1 if self.month > 1 else 12:02}' +\
+            f'/desktop-wallpaper-calendars-{self.month_name_long}-{self.year}/'
 
     @property
     def month_name_long(self) -> str:
         return month_name[self.month].lower()
 
     def get_links_images(self) -> list[str]:
-        responce = requests.get(self.page_month_url)
+        try:
+            responce = requests.get(self.page_month_url)
+            responce.raise_for_status()
+        except requests.exceptions.HTTPError as err:
+            raise Exception('Page wallpaper error\n' + str(err))
         soup = BeautifulSoup(responce.content, 'html.parser')
         return [link.get('href') for link in soup.findAll('a', href=re.compile(f'{self.img_format}'))]
 
     def write_images(self, images: list[str]) -> None:
+        if not images:
+            raise Exception('Walpapers not found')
         if not os.path.exists(self.download_directory):
             os.makedirs(self.download_directory)
         for image in images:
             with open(f'{self.download_directory}/{image.split("/")[-1]}', 'wb') as img:
-                p = requests.get(image)
+                try:
+                    p = requests.get(image)
+                    p.raise_for_status()
+                except requests.exceptions.HTTPError as err:
+                    raise Exception('Image download error\n' + str(err))
                 img.write(p.content)
 
     def get_wallpaper(self):
