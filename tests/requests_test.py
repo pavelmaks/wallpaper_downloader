@@ -3,7 +3,7 @@ from logs.logger import logger
 
 
 img_format = '640x480'
-for year in range(2010, 2023):
+for year in range(2011, 2023):
     for month in range(1, 13):
         print(f'{month} {year} {img_format}')
         obj = ParseWallpaper(month, year, img_format)
