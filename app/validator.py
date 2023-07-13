@@ -1,7 +1,7 @@
 import re
 from typing import ClassVar
 from dataclasses import dataclass
-from now_date import NowDate
+from app.now_date import NowDate
 
 @dataclass
 class Validator:

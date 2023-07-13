@@ -3,6 +3,10 @@
 python3 -m venv venv
 source venv/bin/activate
 ```
+### Возможно вам будет нужно установить переменную окружения
+```
+export PYTHONPATH=$PYTHONPATH:$(pwd)
+```
 ### Установите необходимые быблиотеки
 ```
 pip install -r requirements.txt

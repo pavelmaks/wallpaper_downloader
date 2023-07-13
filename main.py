@@ -1,5 +1,5 @@
-from input_data import InputData
-from parse_wallpaper import ParseWallpaper
+from app.input_data import InputData
+from app.parse_wallpaper import ParseWallpaper
 
 
 def main():
