@@ -2,15 +2,14 @@ import os
 import re
 from calendar import month_name
 
+import aiofiles
 import aiohttp
-import asyncio
 from aiohttp import ClientSession
-import requests
 from bs4 import BeautifulSoup
-from multiprocessing import Process
-from multiprocessing import Queue
-from multiprocessing import Pool, cpu_count
 
+from app.wallpaper_exception import (DownloadImageException,
+                                     DownloadPageException)
+from logs.logger import logger
 
 
 class ParseWallpaper:
@@ -39,70 +38,56 @@ class ParseWallpaper:
     def month_name_long(self) -> str:
         return month_name[self.month].lower()
 
-    def get_links_images(self) -> list[str]:
-        try:
-            responce = requests.get(self.page_month_url)
-            responce.raise_for_status()
-        except requests.exceptions.HTTPError as err:
-            raise Exception('Page wallpaper error\n' + str(err))
-        soup = BeautifulSoup(responce.content, 'html.parser')
-        return [link.get('href') for link in soup.findAll('a', href=re.compile(f'{self.img_format}'))]
+    async def get_links_images(self) -> list[str] | None:
+        async with self.session.get(self.page_month_url) as response:
+            if response.status == 200:
+                content = await response.read()
+                soup = BeautifulSoup(content, 'html.parser')
+                return [link.get('href') for link in soup.findAll('a', href=re.compile(f'{self.img_format}'))]
+            elif response.status == 404:
+                raise DownloadPageException(f'Страница не найдена: {self.page_month_url}')
+            else:
+                raise Exception('Другая ошибка')
 
-    # def write_images(self, images: list[str]) -> None:
-    #     if not images:
-    #         raise Exception('Walpapers not found')
-    #     if not os.path.exists(self.download_directory):
-    #         os.makedirs(self.download_directory)
-    #     for image in images:
-    #         with open(f'{self.download_directory}/{image.split("/")[-1]}', 'wb') as img:
-    #             try:
-    #                 p = requests.get(image)
-    #                 p.raise_for_status()
-    #             except requests.exceptions.HTTPError as err:
-    #                 raise Exception('Image download error\n' + str(err))
-    #             img.write(p.content)
-
-    async def download_image(self, session: ClientSession, url: str) -> bytes | None:
-        async with session.get(url) as response:
+    async def download_image(self, url: str) -> bytes | None:
+        logger.info(f'download start {url.split("/")[-1]}')
+        async with self.session.get(url) as response:
             if response.status == 200:
                 image_data = await response.read()
+                logger.info(f'download end {url.split("/")[-1]}')
                 return image_data
+            elif response.status == 404:
+                raise DownloadImageException(f'Изображение не найдено: {url}')
             else:
-                return None
+                raise Exception('Другая ошибка')
 
-    def process_image(self, image_data, filename):
-        with open(f'{self.download_directory}/{filename}', 'wb') as f:
-            f.write(image_data)
-        print(f'Saved image: {filename}')
+    async def process_image(self, image_data, filename):
+        async with aiofiles.open(f'{self.download_directory}/{filename}', 'wb') as f:
+            logger.info(f'wrile start {filename}')
+            await f.write(image_data)
+            logger.info(f'wrile end {filename}')
 
-    def process_queue(self, queue):
-        while True:
-            item = queue.get()
-            if item is None:
-                break
-            image_data, filename = item
-            self.process_image(image_data, filename)
-            queue.task_done()
-
-    async def write_images(self, links_images: list[str]) -> None:
-        self.queue = asyncio.Queue(maxsize=4)
+    async def download_and_write_images(self, links_images: list[str]) -> None:
         if not links_images:
-            raise Exception('Walpapers not found')
+            raise DownloadImageException(f'Изображение с форматом: {self.img_format} не найдены')
         if not os.path.exists(self.download_directory):
             os.makedirs(self.download_directory)
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
-            for link in links_images:
-                bin_image = await self.download_image(session, link)
-                await self.queue.put((bin_image, link.split("/")[-1]))
-                await self.create_processes()
-                # self.process_image(bin_image, link.split("/")[-1])
+        for link in links_images:
+            try:
+                bin_image = await self.download_image(link)
+            except DownloadImageException as e:
+                logger.error(str(e))
+                break
+            await self.process_image(bin_image, link.split("/")[-1])
 
-    async def create_processes(self):
-        item = await self.queue.get()
-        file_data, file_name = item
-        p = Process(target=self.process_image, args=(file_data, file_name))
-        p.start()
-
-    def get_wallpaper(self):
-        links_images = self.get_links_images()
-        asyncio.run(self.write_images(links_images))
+    async def get_wallpaper(self) -> None:
+        try:
+            self.session = ClientSession(connector=aiohttp.TCPConnector(ssl=False))
+            links_images = await self.get_links_images()
+            await self.write_images(links_images)
+        except DownloadPageException as page_error:
+            logger.error(page_error)
+        except Exception as error:
+            logger.error(str(error))
+        finally:
+            await self.session.close()
