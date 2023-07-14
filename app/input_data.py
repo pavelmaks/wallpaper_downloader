@@ -1,6 +1,7 @@
 import argparse
-from app.validator import Validator
+
 from app.now_date import NowDate
+from app.validator import Validator
 
 
 class InputData:
